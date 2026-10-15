@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101114">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <title>{% block title %}{{ site_name }} — YouTube Video & MP3 Downloader{% endblock %}</title>
+  <meta name="description" content="{% block description %}Download YouTube videos as MP4 or audio as MP3 in available quality. No account required. Use only for media you own or are authorized to download.{% endblock %}">
+  <link rel="canonical" href="{{ site_url }}{{ request.path if request.path != '/' else '/' }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="{{ site_name }}">
+  <meta property="og:title" content="{% block ogtitle %}{{ site_name }} — YouTube Downloader{% endblock %}">
+  <meta property="og:description" content="A simple, mobile-first tool for authorized YouTube video and audio downloads.">
+  <meta property="og:url" content="{{ site_url }}{{ request.path }}">
+  <meta name="twitter:card" content="summary">
+  {% block schema %}{% endblock %}
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="/" aria-label="{{ site_name }} home"><span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z" fill="currentColor"/></svg></span><span>{{ site_name }}</span></a>
+    <nav aria-label="Main navigation"><a href="#features">Features</a><a href="/about">About</a><a class="nav-cta" href="/">Open downloader <span aria-hidden="true">↗</span></a></nav>
+  </header>
+  <main>{% block content %}{% endblock %}</main>
+  <footer class="site-footer">
+    <div class="footer-top"><a class="brand" href="/"><span class="brand-mark"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5.5v13l10-6.5z" fill="currentColor"/></svg></span><span>{{ site_name }}</span></a><p>Simple tools. Clear choices.</p></div>
+    <div class="footer-bottom"><span>© <span id="year">2026</span> {{ site_name }}</span><div><a href="/about">About</a><a href="/privacy">Privacy</a><a href="/terms">Terms &amp; Conditions</a></div></div>
+    <p class="legal-note">Use this tool only for content you own or are authorized to download. YouTube is a trademark of Google LLC; this independent tool is not affiliated with or endorsed by YouTube.</p>
+  </footer>
+  <script>document.getElementById('year').textContent = new Date().getFullYear();</script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

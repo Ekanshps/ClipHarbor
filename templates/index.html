@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}YouTube Video Downloader — MP4, MP3 & Available Quality | {{ site_name }}{% endblock %}
+{% block description %}Convert an eligible YouTube video to MP4 or MP3 and choose from available quality options. Fast, mobile-friendly, and no account required. Download only content you are permitted to use.{% endblock %}
+{% block schema %}<script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"{{ site_name }}","url":"{{ site_url }}/","applicationCategory":"MultimediaApplication","operatingSystem":"Any","description":"A browser-based interface for downloading authorized YouTube media in available MP4 video or MP3 audio formats.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"}}</script>
+<script type="application/ld+json">{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[{"@type":"Question","name":"Can I download YouTube videos as MP4?","acceptedAnswer":{"@type":"Answer","text":"For videos you own or are authorized to download, choose MP4 and select an available quality."}},{"@type":"Question","name":"Can I convert YouTube audio to MP3?","acceptedAnswer":{"@type":"Answer","text":"Choose MP3 audio for eligible content. MP3 conversion requires FFmpeg on the server."}},{"@type":"Question","name":"Do I need an account?","acceptedAnswer":{"@type":"Answer","text":"This app does not require a user login. Platform and hosting restrictions still apply."}}]}</script>{% endblock %}
+{% block content %}
+<section class="hero">
+  <div class="hero-glow"></div>
+  <div class="eyebrow"><span class="pulse"></span> SIMPLE MEDIA TOOLKIT</div>
+  <h1>Your video.<br><span>Your format.</span></h1>
+  <p class="hero-copy">A clean way to save eligible YouTube videos as MP4 or audio as MP3. Pick an available quality, preview the details, and keep moving.</p>
+  <div class="trust-row"><span><svg viewBox="0 0 24 24"><path d="M5 12.5 9.5 17 19 7"/></svg>No account needed</span><span><svg viewBox="0 0 24 24"><path d="M5 12.5 9.5 17 19 7"/></svg>MP4 + MP3</span><span><svg viewBox="0 0 24 24"><path d="M5 12.5 9.5 17 19 7"/></svg>Available quality</span></div>
+</section>
+<section class="tool-wrap" id="downloader" aria-labelledby="tool-title">
+  <div class="tool-card">
+    <div class="tool-heading"><div><div class="eyebrow dark-eyebrow">THE DOWNLOADER</div><h2 id="tool-title">Start with a link</h2></div><div class="tool-icon"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 17v3h14v-3"/></svg></div></div>
+    <form id="url-form">
+      <label for="video-url">YouTube video URL</label>
+      <div class="url-field"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1 0l2-2A5 5 0 0 0 12 4l-1.1 1.1M14 11a5 5 0 0 0-7.1 0l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg><input id="video-url" name="url" type="url" placeholder="https://www.youtube.com/watch?v=..." autocomplete="url" required><button id="inspect-btn" type="submit">Check video <span aria-hidden="true">→</span></button></div>
+      <p class="field-hint">Use a standard YouTube video link. Playlists are not processed.</p>
+    </form>
+    <div id="notice" class="notice" role="status" aria-live="polite" hidden></div>
+    <div id="video-panel" class="video-panel" hidden>
+      <div class="video-meta"><img id="thumbnail" alt="" width="120" height="68"><div><h3 id="video-title"></h3><p id="video-uploader"></p></div></div>
+      <div class="choice-grid"><div><label for="format">Format</label><select id="format"><option value="mp4">MP4 video</option><option value="mp3">MP3 audio</option></select></div><div id="quality-wrap"><label for="quality">Video quality</label><select id="quality"><option value="best">Best available</option></select></div></div>
+      <button id="download-btn" class="primary-btn" type="button">Prepare download <span aria-hidden="true">↓</span></button>
+      <div id="progress-wrap" hidden><div class="progress-label"><span id="progress-text">Preparing file…</span><span id="progress-percent">0%</span></div><div class="progress-track"><div id="progress-bar"></div></div></div>
+      <a id="download-link" class="primary-btn download-link" hidden>Download file <span aria-hidden="true">↗</span></a>
+    </div>
+    <div class="tool-foot"><span class="shield">◇</span> Download only content you own or have permission to use.</div>
+  </div>
+</section>
+<section class="section intro-section"><div class="section-kicker">BUILT FOR CLARITY</div><h2>Less friction.<br><span>More control.</span></h2><p>Skip cluttered interfaces. {{ site_name }} puts the essentials in one place: link, format, quality, done. Designed to feel just as natural on a phone as it does on a desktop.</p></section>
+<section class="section features-section" id="features"><div class="section-head"><div><div class="section-kicker">WHY {{ site_name|upper }}</div><h2>The essentials,<br>done well.</h2></div><p>Useful options without the noisy extras.</p></div><div class="feature-grid">
+<article class="feature-card"><div class="feature-symbol purple">↗</div><h3>MP4 video downloads</h3><p>Choose the best available MP4 or set a resolution ceiling when supported by the source.</p><span class="card-number">01 / VIDEO</span></article>
+<article class="feature-card"><div class="feature-symbol orange">♫</div><h3>MP3 audio conversion</h3><p>Save eligible audio as a convenient MP3 file. Audio conversion needs FFmpeg on the server.</p><span class="card-number">02 / AUDIO</span></article>
+<article class="feature-card"><div class="feature-symbol green">⌁</div><h3>Quality choices</h3><p>See available video qualities and select a sensible option for your needs.</p><span class="card-number">03 / CONTROL</span></article>
+<article class="feature-card"><div class="feature-symbol blue">▣</div><h3>No account flow</h3><p>Start with a URL. No user registration or login screen is built into this app.</p><span class="card-number">04 / SIMPLE</span></article>
+</div></section>
+<section class="how-section"><div class="how-inner"><div><div class="section-kicker">HOW IT WORKS</div><h2>Three steps.<br><span>That's it.</span></h2><p class="muted-copy">A straightforward workflow from link to file.</p></div><div class="steps"><article><span>01</span><div><h3>Paste a video link</h3><p>Copy the URL of a YouTube video you are allowed to download.</p></div></article><article><span>02</span><div><h3>Choose your format</h3><p>Select MP4 or MP3 and pick an available video quality.</p></div></article><article><span>03</span><div><h3>Save your file</h3><p>Prepare the file and use the download link when it is ready.</p></div></article></div></div></section>
+<section class="section use-cases"><div class="section-kicker">MADE FOR EVERYDAY TASKS</div><h2>Useful for your workflow.</h2><div class="usecase-grid"><div><span>↳</span><h3>Personal archives</h3><p>Keep a local copy of your own published videos.</p></div><div><span>↳</span><h3>Offline review</h3><p>Review authorized footage when you are away from a reliable connection.</p></div><div><span>↳</span><h3>Audio references</h3><p>Prepare permitted audio references for a personal project.</p></div></div></section>
+<section class="faq-section" id="faq"><div class="section-kicker">GOOD TO KNOW</div><h2>Frequently asked questions</h2><div class="faq-list">
+<details><summary>Can I download any YouTube video?</summary><p>Only download videos you own, have permission to use, or are otherwise legally permitted to download. Platform terms and local law apply.</p></details>
+<details><summary>Which video resolutions are available?</summary><p>Options depend on the source video and the formats exposed by yt-dlp. The app cannot create a resolution that the source does not provide.</p></details>
+<details><summary>Why did MP3 conversion fail?</summary><p>MP3 conversion requires FFmpeg to be installed on the server. Some source formats may also be temporarily unavailable.</p></details>
+<details><summary>Is there really no rate limit?</summary><p>The app does not impose a user-account quota in this starter version, but YouTube, your server, and your hosting provider may impose their own limits. This tool does not attempt to evade them.</p></details>
+<details><summary>Does this tool add a watermark?</summary><p>The app does not add a watermark to the media. Source content and any marks already present in it remain unchanged.</p></details>
+</div></section>
+<section class="interlinks"><div><div class="section-kicker">EXPLORE</div><h2>Learn more about {{ site_name }}.</h2></div><div class="link-cards"><a href="/about"><span>About the tool</span><b>↗</b></a><a href="/privacy"><span>Privacy approach</span><b>↗</b></a><a href="/terms"><span>Terms &amp; conditions</span><b>↗</b></a></div></section>
+{% endblock %}
+{% block scripts %}<script src="{{ url_for('static', filename='app.js') }}" defer></script>{% endblock %}

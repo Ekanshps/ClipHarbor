@@ -16,8 +16,22 @@ TEMP_DIR = os.getenv("TEMP_DIR", "/tmp/clipharbor")
 TTL = int(os.getenv("FILE_TTL_SECONDS", "900"))
 
 app = Flask(__name__)
-CORS(app, origins=[o.strip() for o in os.getenv("ALLOWED_ORIGINS", "*").split(",")],
-     expose_headers=["Content-Disposition"])
+
+allowed_origins = [
+    origin.strip().rstrip("/")
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+CORS(
+    app,
+    resources={
+        r"/api/*": {
+            "origins": allowed_origins
+        }
+    },
+    expose_headers=["Content-Disposition"]
+)
 
 
 def _video_id_or_error(url):

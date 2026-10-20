@@ -19,17 +19,18 @@ app = Flask(__name__)
 
 allowed_origins = [
     origin.strip().rstrip("/")
-    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS",
+        "https://clipharbor.epsingh.in"
+    ).split(",")
     if origin.strip()
 ]
 
 CORS(
     app,
-    resources={
-        r"/api/*": {
-            "origins": allowed_origins
-        }
-    },
+    resources={r"/api/*": {"origins": allowed_origins}},
+    methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type"],
     expose_headers=["Content-Disposition"]
 )
 

@@ -3,14 +3,11 @@
 
 import logging
 import os
-import re
-import tempfile
 from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, Response, jsonify, request, send_file
-from flask_cors import CORS
 from werkzeug.exceptions import RequestEntityTooLarge
 
 load_dotenv()
@@ -24,41 +21,59 @@ from utils.validation import extract_video_id  # noqa: E402
 # Configuration
 # --------------------------------------------------
 
+DEFAULT_ORIGIN = "https://clipharbor.epsingh.in"
+
+ALLOWED_ORIGINS = {
+    origin.strip().rstrip("/")
+    for origin in os.getenv("ALLOWED_ORIGINS", DEFAULT_ORIGIN).split(",")
+    if origin.strip()
+}
+
 TEMP_DIR = Path(os.getenv("TEMP_DIR", "/tmp/clipharbor"))
 FILE_TTL_SECONDS = max(60, int(os.getenv("FILE_TTL_SECONDS", "900")))
 MAX_REQUEST_BYTES = 16 * 1024
 
-DEFAULT_ORIGIN = "https://clipharbor.epsingh.in"
-
-ALLOWED_ORIGINS = [
-    origin.strip().rstrip("/")
-    for origin in os.getenv(
-        "ALLOWED_ORIGINS",
-        DEFAULT_ORIGIN,
-    ).split(",")
-    if origin.strip()
-]
-
-TEMP_DIR.mkdir(parents=True, exist_ok=True)
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = MAX_REQUEST_BYTES
 
-logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO"))
+TEMP_DIR.mkdir(parents=True, exist_ok=True)
 
-CORS(
-    app,
-    resources={
-        r"/api/*": {
-            "origins": ALLOWED_ORIGINS,
-            "methods": ["GET", "POST", "OPTIONS"],
-            "allow_headers": ["Content-Type"],
-        }
-    },
-    expose_headers=["Content-Disposition"],
-    supports_credentials=False,
-    max_age=600,
-)
+
+# --------------------------------------------------
+# CORS configuration
+# --------------------------------------------------
+
+CORS_METHODS = "GET, POST, OPTIONS"
+CORS_HEADERS = "Content-Type"
+CORS_MAX_AGE = "600"
+
+
+@app.after_request
+def add_cors_headers(response):
+    """Add CORS headers to API responses for approved frontend origins."""
+
+    if not request.path.startswith("/api/"):
+        return response
+
+    origin = request.headers.get("Origin", "").strip().rstrip("/")
+
+    # Do not grant cross-origin access to unapproved origins.
+    if origin not in ALLOWED_ORIGINS:
+        return response
+
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Methods"] = CORS_METHODS
+    response.headers["Access-Control-Allow-Headers"] = CORS_HEADERS
+    response.headers["Access-Control-Max-Age"] = CORS_MAX_AGE
+    response.headers["Access-Control-Expose-Headers"] = "Content-Disposition"
+    response.headers["Vary"] = "Origin"
+
+    return response
 
 
 # --------------------------------------------------
@@ -72,6 +87,7 @@ def api_error(message: str, status_code: int):
 
 def get_video_id(url):
     """Validate a submitted URL and extract its YouTube video ID."""
+
     if not isinstance(url, str) or not url.strip():
         return None, api_error("Please provide a YouTube video URL.", 400)
 
@@ -87,7 +103,7 @@ def get_video_id(url):
 
 
 def cleanup_expired_files():
-    """Remove old temporary download files when possible."""
+    """Remove expired temporary downloads where possible."""
     try:
         purge_old(str(TEMP_DIR), FILE_TTL_SECONDS)
     except Exception:
@@ -116,8 +132,12 @@ def handle_not_found(_error):
 
 
 @app.errorhandler(500)
-def handle_internal_error(_error):
-    app.logger.exception("Unhandled internal server error")
+def handle_internal_error(error):
+    app.logger.error(
+        "Unhandled internal server error: %s",
+        error,
+        exc_info=True,
+    )
     return api_error("An internal server error occurred.", 500)
 
 
@@ -127,7 +147,6 @@ def handle_internal_error(_error):
 
 @app.get("/api/health")
 def health():
-    """Health endpoint for deployment checks."""
     return jsonify(status="ok"), 200
 
 
@@ -137,7 +156,7 @@ def health():
 
 @app.post("/api/info")
 def info():
-    """Return video metadata, available qualities and thumbnails."""
+    """Return video metadata, quality options, and thumbnails."""
 
     if not request.is_json:
         return api_error("Content-Type must be application/json.", 415)
@@ -156,7 +175,7 @@ def info():
         data = downloader.fetch_info(video_id)
 
         if not isinstance(data, dict):
-            app.logger.error("Video metadata returned an unexpected format")
+            app.logger.error("Unexpected video metadata format")
             return api_error("Unable to read video information.", 502)
 
         data["thumbnails"] = downloader.thumbnail_options(video_id)
@@ -198,7 +217,6 @@ def download():
     height = max(144, min(height, 4320))
 
     cleanup_expired_files()
-
     job_dir = None
 
     try:
@@ -209,10 +227,10 @@ def download():
             str(TEMP_DIR),
         )
 
-        file_path = Path(file_path).resolve()
         job_path = Path(job_dir).resolve()
+        file_path = Path(file_path).resolve()
 
-        # Ensure the downloader returned a file inside its job directory.
+        # Ensure the file is inside its assigned job directory.
         if not file_path.is_relative_to(job_path):
             raise ValueError("Download path is outside the job directory")
 
@@ -225,8 +243,10 @@ def download():
             download_name=file_path.name,
         )
 
-        # Keep the file available until the response has been closed.
-        response.call_on_close(lambda: remove_dir(str(job_dir)))
+        # Remove the job directory when the response is closed.
+        response.call_on_close(
+            lambda path=str(job_dir): remove_dir(path)
+        )
 
         return response
 
@@ -237,7 +257,7 @@ def download():
             try:
                 remove_dir(str(job_dir))
             except Exception:
-                app.logger.exception("Failed to clean up download directory")
+                app.logger.exception("Download cleanup failed")
 
         return api_error(
             "Download failed. Please try another quality or try again later.",
@@ -251,7 +271,7 @@ def download():
 
 @app.get("/api/thumbnail")
 def thumbnail():
-    """Fetch a YouTube thumbnail and return it as a downloadable image."""
+    """Fetch a YouTube thumbnail and return it as an image attachment."""
 
     video_id, error = get_video_id(request.args.get("url"))
 
@@ -259,29 +279,26 @@ def thumbnail():
         return error
 
     size = request.args.get("size", "maxresdefault")
-
-    allowed_sizes = {
-        key for key, _label in downloader.THUMB_SIZES
-    }
+    allowed_sizes = {key for key, _label in downloader.THUMB_SIZES}
 
     if size not in allowed_sizes:
         size = "hqdefault"
 
-    thumbnail_url = f"https://i.ytimg.com/vi/{video_id}/{size}.jpg"
+    fallback_size = "hqdefault"
 
     try:
         upstream = requests.get(
-            thumbnail_url,
+            f"https://i.ytimg.com/vi/{video_id}/{size}.jpg",
             timeout=(5, 15),
-            allow_redirects=True,
         )
 
-        if upstream.status_code != 200:
+        if upstream.status_code != 200 and size != fallback_size:
             upstream.close()
+            size = fallback_size
+
             upstream = requests.get(
-                f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
+                f"https://i.ytimg.com/vi/{video_id}/{size}.jpg",
                 timeout=(5, 15),
-                allow_redirects=True,
             )
 
         with upstream:

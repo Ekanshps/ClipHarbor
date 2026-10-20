@@ -1,4 +1,3 @@
-
 /* ClipHarbor - Downloader Logic (Video + Thumbnail Tabs) */
 (() => {
   "use strict";
@@ -20,6 +19,17 @@
 
   let mode = "video";
   let activeController = null;
+
+  const ALLOWED_HOSTS = new Set([
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "music.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com"
+  ]);
 
   // API configuration
   function getApiBase() {
@@ -57,6 +67,76 @@
     return parsed.origin;
   }
 
+  // Clean pasted URLs, including Markdown links.
+  function normalizeVideoUrl(value) {
+    let url = String(value || "").trim();
+
+    // Convert: [YouTube link](https://youtu.be/...)
+    // into:    https://youtu.be/...
+    const markdownMatch = url.match(
+      /^\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)$/i
+    );
+
+    if (markdownMatch) {
+      url = markdownMatch[2];
+    }
+
+    // Remove optional angle brackets around a pasted URL.
+    if (url.startsWith("<") && url.endsWith(">")) {
+      url = url.slice(1, -1).trim();
+    }
+
+    return url;
+  }
+
+  // Validate and normalize a supported YouTube URL.
+  function validateVideoUrl(value) {
+    const url = normalizeVideoUrl(value);
+
+    if (!url) {
+      throw new Error("Paste a YouTube link first.");
+    }
+
+    let parsed;
+
+    try {
+      parsed = new URL(url);
+    } catch {
+      throw new Error("Enter a valid YouTube video URL.");
+    }
+
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      throw new Error("The URL must use HTTP or HTTPS.");
+    }
+
+    if (parsed.username || parsed.password || parsed.port) {
+      throw new Error("Please enter a standard YouTube video URL.");
+    }
+
+    if (!ALLOWED_HOSTS.has(parsed.hostname.toLowerCase())) {
+      throw new Error("Please enter a supported YouTube URL.");
+    }
+
+    // A video URL should identify a video, not just the homepage.
+    const hostname = parsed.hostname.toLowerCase();
+
+    if (
+      hostname === "youtu.be" ||
+      hostname === "www.youtu.be"
+    ) {
+      if (!parsed.pathname.split("/").filter(Boolean)[0]) {
+        throw new Error("The YouTube link does not contain a video ID.");
+      }
+    } else if (
+      !parsed.searchParams.get("v") &&
+      !/^\/(shorts|live|embed)\/[^/]+/.test(parsed.pathname)
+    ) {
+      throw new Error("Please enter a YouTube video, Shorts, or live link.");
+    }
+
+    return parsed.href;
+  }
+
   // UI helpers
   function setStatus(message, isError = false) {
     status.textContent = message;
@@ -82,8 +162,13 @@
     }
 
     const total = Math.floor(value);
-    const minutes = Math.floor(total / 60);
+    const hours = Math.floor(total / 3600);
+    const minutes = Math.floor((total % 3600) / 60);
     const remainingSeconds = String(total % 60).padStart(2, "0");
+
+    if (hours > 0) {
+      return `${hours}:${String(minutes).padStart(2, "0")}:${remainingSeconds}`;
+    }
 
     return `${minutes}:${remainingSeconds}`;
   }
@@ -95,6 +180,115 @@
     if (text !== undefined) element.textContent = String(text);
 
     return element;
+  }
+
+  // Convert API validation errors into readable messages.
+  function getApiErrorMessage(data, statusCode) {
+    const detail = data?.error ?? data?.message ?? data?.detail;
+
+    if (typeof detail === "string" && detail.trim()) {
+      return detail;
+    }
+
+    // Some frameworks return validation errors as an array.
+    if (Array.isArray(detail)) {
+      const messages = detail
+        .map((item) => {
+          if (typeof item === "string") return item;
+
+          if (item && typeof item === "object") {
+            const location = Array.isArray(item.loc)
+              ? item.loc.join(" → ")
+              : "";
+
+            const message = item.msg || item.message || "";
+
+            return [location, message].filter(Boolean).join(": ");
+          }
+
+          return "";
+        })
+        .filter(Boolean);
+
+      if (messages.length) {
+        return messages.join(" | ");
+      }
+    }
+
+    if (statusCode === 422) {
+      return "The server rejected the URL or request data (422). Check the URL and try again.";
+    }
+
+    if (statusCode === 429) {
+      return "Too many requests. Please wait a little and try again.";
+    }
+
+    if (statusCode >= 500) {
+      return "The server encountered an error. Please try again later.";
+    }
+
+    return `The request failed with HTTP ${statusCode}.`;
+  }
+
+  // API response handling
+  async function readResponse(response) {
+    const text = await response.text();
+    let data = null;
+
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        if (!response.ok) {
+          throw new Error(
+            `The server returned HTTP ${response.status}. Please try again.`
+          );
+        }
+
+        throw new Error("The API returned an unexpected response.");
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error(
+        getApiErrorMessage(data, response.status)
+      );
+    }
+
+    if (
+      !data ||
+      typeof data !== "object" ||
+      Array.isArray(data)
+    ) {
+      throw new Error("The API returned an invalid response.");
+    }
+
+    return data;
+  }
+
+  function showRequestError(error) {
+    console.error("ClipHarbor API request failed:", error);
+
+    if (error.name === "AbortError") {
+      setStatus(
+        "The request timed out or was cancelled. Please try again.",
+        true
+      );
+      return;
+    }
+
+    if (error instanceof TypeError) {
+      setStatus(
+        "Could not connect to the API. Check your connection and try again.",
+        true
+      );
+      return;
+    }
+
+    setStatus(
+      error.message || "Something went wrong. Please try again.",
+      true
+    );
   }
 
   // Video / thumbnail tabs
@@ -117,6 +311,11 @@
 
   document.querySelectorAll(".tab").forEach((tab) => {
     tab.addEventListener("click", () => {
+      // Cancel a request started in the previous mode.
+      if (activeController) {
+        activeController.abort();
+      }
+
       setMode(tab.dataset.mode);
     });
   });
@@ -125,69 +324,6 @@
 
   if (queryParams.get("tab") === "thumbnail") {
     setMode("thumbnail");
-  }
-
-  // API response handling
-  async function readResponse(response) {
-    const contentType = response.headers.get("content-type") || "";
-
-    if (!contentType.toLowerCase().includes("application/json")) {
-      if (!response.ok) {
-        throw new Error(
-          `The server returned HTTP ${response.status}. Please try again.`
-        );
-      }
-
-      throw new Error(
-        "The API returned an unexpected response. Please try again."
-      );
-    }
-
-    let data;
-
-    try {
-      data = await response.json();
-    } catch {
-      throw new Error("The API returned invalid JSON.");
-    }
-
-    if (!response.ok) {
-      throw new Error(
-        data?.error ||
-        `The request failed with HTTP ${response.status}.`
-      );
-    }
-
-    if (!data || typeof data !== "object" || Array.isArray(data)) {
-      throw new Error("The API returned an invalid response.");
-    }
-
-    return data;
-  }
-
-  function showRequestError(error) {
-    console.error("ClipHarbor API request failed:", error);
-
-    if (error.name === "AbortError") {
-      setStatus(
-        "The request timed out. The server may be starting up. Please try again.",
-        true
-      );
-      return;
-    }
-
-    if (error instanceof TypeError) {
-      setStatus(
-        "Could not connect to the API. Check the backend URL, CORS settings, and network connection.",
-        true
-      );
-      return;
-    }
-
-    setStatus(
-      error.message || "Something went wrong. Please try again.",
-      true
-    );
   }
 
   // Result rendering
@@ -208,12 +344,11 @@
     }
 
     const container = document.createDocumentFragment();
-
     const meta = makeElement("div", "meta");
+
     const thumbnailUrl =
       typeof data.thumbnail === "string" ? data.thumbnail : "";
 
-    // Only display HTTPS thumbnail images.
     if (thumbnailUrl) {
       try {
         const parsedThumbnail = new URL(thumbnailUrl);
@@ -230,11 +365,12 @@
           meta.appendChild(image);
         }
       } catch {
-        // Ignore an invalid thumbnail URL.
+        // Ignore invalid thumbnail URLs.
       }
     }
 
     const details = makeElement("div");
+
     details.appendChild(
       makeElement(
         "h3",
@@ -278,12 +414,21 @@
         const type = item.type === "audio" ? "audio" : "video";
         const height = Number(item.height);
 
-        if (
+        // Audio quality uses height 0; don't reject it.
+        if (type === "video" && (
           !Number.isFinite(height) ||
           height < 144 ||
           height > 4320
-        ) {
+        )) {
           console.warn("Skipping invalid video quality:", item);
+          return;
+        }
+
+        if (
+          type === "audio" &&
+          (!Number.isFinite(height) || height < 0)
+        ) {
+          console.warn("Skipping invalid audio option:", item);
           return;
         }
 
@@ -341,51 +486,31 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const videoUrl = input.value.trim();
-
-    if (!videoUrl) {
-      setStatus("Paste a YouTube link first.", true);
-      input.focus();
-      return;
-    }
-
-    let parsedUrl;
+    let videoUrl;
 
     try {
-      parsedUrl = new URL(videoUrl);
-    } catch {
-      setStatus("Enter a valid YouTube video URL.", true);
+      videoUrl = validateVideoUrl(input.value);
+    } catch (error) {
+      setStatus(error.message, true);
       input.focus();
       return;
     }
 
-    if (
-      !["http:", "https:"].includes(parsedUrl.protocol) ||
-      !["youtube.com", "www.youtube.com", "m.youtube.com",
-        "youtu.be", "www.youtu.be", "music.youtube.com",
-        "youtube-nocookie.com", "www.youtube-nocookie.com"
-      ].includes(parsedUrl.hostname.toLowerCase())
-    ) {
-      setStatus("Please enter a supported YouTube URL.", true);
-      input.focus();
-      return;
-    }
+    // Keep the cleaned URL visible in the input.
+    input.value = videoUrl;
 
-    // Cancel a previous request if one is still active.
     if (activeController) {
       activeController.abort();
     }
 
     const controller = new AbortController();
     activeController = controller;
-
     const requestedMode = mode;
 
     setLoading(true);
     clearResults();
     setStatus("Connecting to ClipHarbor...");
 
-    // Render free services may need time to wake up.
     const timeoutId = setTimeout(() => {
       controller.abort();
     }, 90000);
@@ -409,7 +534,6 @@
 
       const data = await readResponse(response);
 
-      // Ignore a response if the user has switched tabs meanwhile.
       if (requestedMode !== mode) return;
 
       render(data, requestedMode, videoUrl);

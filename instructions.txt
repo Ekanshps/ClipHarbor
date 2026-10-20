@@ -1,0 +1,47 @@
+CLIPHARBOR - SETUP GUIDE
+
+A) RUN LOCALLY
+Requirements: Python 3.10+, FFmpeg installed (ffmpeg -version must work).
+  Windows: winget install ffmpeg      Mac: brew install ffmpeg      Ubuntu: sudo apt install ffmpeg
+
+1. Backend
+   cd backend
+   python -m venv venv
+   venv\Scripts\activate          (Mac/Linux: source venv/bin/activate)
+   pip install -r requirements.txt
+   copy .env.example .env         (Mac/Linux: cp .env.example .env)
+   python app.py                  -> API at http://localhost:8000/api/health
+2. Frontend (new terminal)
+   cd frontend
+   python -m http.server 5500     -> open http://localhost:5500
+   (frontend/static/js/app.js auto-uses localhost:8000 on localhost)
+3. Tests: cd backend && pytest
+
+B) HOST ONLINE
+1. Backend on Render
+   - Push this repo to GitHub.
+   - Render > New > Web Service > select repo, Root Directory = backend.
+   - FFmpeg is required, so choose the Docker runtime (backend/Dockerfile is included).
+         FROM python:3.12-slim
+         RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
+         WORKDIR /app
+         COPY requirements.txt . && RUN pip install -r requirements.txt
+         COPY . .
+         CMD gunicorn app:app --workers 2 --threads 4 --timeout 300 --bind 0.0.0.0:$PORT
+     (put it in backend/Dockerfile, split the COPY/RUN lines as normal Dockerfile lines)
+   - Environment: ALLOWED_ORIGINS=https://clipharbor.epsingh.in
+   - Copy the Render URL, e.g. https://clipharbor-api.onrender.com
+2. Frontend on Vercel
+   - Open frontend/static/js/app.js and set the production API_BASE to your Render URL.
+   - Vercel > New Project > select repo, Root Directory = frontend, Framework = Other.
+   - Settings > Domains > add clipharbor.epsingh.in. Add a CNAME record at your DNS
+     provider pointing clipharbor -> cname.vercel-dns.com
+3. SEO after launch
+   - Add the site in Google Search Console and submit https://clipharbor.epsingh.in/sitemap.xml
+   - Replace logo.svg with a 512x512 PNG for better social previews if you like.
+
+C) KNOWN LIMITS / TIPS
+- Render free tier sleeps after idle time: first request can take ~30s. Use a paid plan or a ping service for "no lag".
+- YouTube may block datacenter IPs. If you see sign-in errors, export a cookies.txt and set YTDLP_COOKIES.
+- Keep yt-dlp updated (pip install -U yt-dlp and redeploy), YouTube changes often.
+- No rate limit is set by default. Consider adding flask-limiter if abused.

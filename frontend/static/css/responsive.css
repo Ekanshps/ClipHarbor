@@ -1,0 +1,8 @@
+@media (max-width:760px){
+  .menu{display:block}
+  nav ul{display:none;position:absolute;left:0;right:0;top:62px;background:var(--bg);border-bottom:1px solid var(--line);flex-direction:column;gap:0;padding:8px 16px}
+  nav ul.open{display:flex}nav li a{display:block;padding:12px 0}
+  .hero{padding-top:36px}.meta{flex-direction:column}.meta img{width:100%}
+  .field .btn{width:100%}section{padding:42px 0}
+}
+@media (min-width:1000px){.hero{padding-top:84px}.dock{padding:20px}}

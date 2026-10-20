@@ -1,7 +1,7 @@
 /* ClipHarbor - shared UI + config */
 const isLocal = ["localhost", "127.0.0.1"].includes(location.hostname);
 // CHANGE THIS after deploying the backend on Render:
-window.API_BASE = isLocal ? "http://localhost:8000" : "https://clipharbor.onrender.com" : "https://clipharbor.epsingh.in/";
+window.API_BASE = isLocal ? "http://localhost:8000" : "https://clipharbor.onrender.com";
 
 const menuBtn = document.querySelector(".menu");
 menuBtn?.addEventListener("click", () => {

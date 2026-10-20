@@ -13,49 +13,68 @@
   const result = $("#result");
   const go = $("#go");
 
-  let mode = "video";
+  if (!input || !status || !result || !go) {
+    console.error("ClipHarbor: Required downloader elements are missing.");
+    return;
+  }
 
-  // -----------------------------
-  // API Configuration
-  // -----------------------------
-  const getApiBase = () => {
+  let mode = "video";
+  let activeController = null;
+
+  // API configuration
+  function getApiBase() {
     const base = window.API_BASE;
 
     if (typeof base !== "string" || !base.trim()) {
-      throw new Error("API URL is not configured. Please try again later.");
+      throw new Error(
+        "API configuration is missing. Please refresh and try again."
+      );
     }
 
-    return base.trim().replace(/\/+$/, "");
-  };
+    let parsed;
 
-  // -----------------------------
-  // UI Helpers
-  // -----------------------------
-  const setStatus = (message, isError = false) => {
-    if (status) {
-      status.textContent = message;
-      status.classList.toggle("err", isError);
-      status.setAttribute("role", isError ? "alert" : "status");
+    try {
+      parsed = new URL(base.trim());
+    } catch {
+      throw new Error("The configured API URL is invalid.");
     }
-  };
 
-  const setLoading = (loading) => {
-    if (go) {
-      go.disabled = loading;
-      go.setAttribute("aria-busy", String(loading));
+    if (
+      !["http:", "https:"].includes(parsed.protocol) ||
+      parsed.username ||
+      parsed.password
+    ) {
+      throw new Error("The configured API URL is invalid.");
     }
-  };
 
-  const escapeHTML = (value = "") =>
-    String(value).replace(/[&<>"']/g, (char) => ({
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;"
-    })[char]);
+    if (
+      location.protocol === "https:" &&
+      parsed.protocol !== "https:"
+    ) {
+      throw new Error("The API must use HTTPS on this website.");
+    }
 
-  const formatTime = (seconds) => {
+    return parsed.origin;
+  }
+
+  // UI helpers
+  function setStatus(message, isError = false) {
+    status.textContent = message;
+    status.classList.toggle("err", isError);
+    status.setAttribute("role", isError ? "alert" : "status");
+  }
+
+  function setLoading(loading) {
+    go.disabled = loading;
+    go.setAttribute("aria-busy", String(loading));
+  }
+
+  function clearResults() {
+    result.replaceChildren();
+    result.hidden = true;
+  }
+
+  function formatTime(seconds) {
     const value = Number(seconds);
 
     if (!Number.isFinite(value) || value <= 0) {
@@ -67,33 +86,32 @@
     const remainingSeconds = String(total % 60).padStart(2, "0");
 
     return `${minutes}:${remainingSeconds}`;
-  };
+  }
 
-  const encodeQuery = (value) => encodeURIComponent(value);
+  function makeElement(tag, className, text) {
+    const element = document.createElement(tag);
 
-  // -----------------------------
-  // Video / Thumbnail Tabs
-  // -----------------------------
+    if (className) element.className = className;
+    if (text !== undefined) element.textContent = String(text);
+
+    return element;
+  }
+
+  // Video / thumbnail tabs
   function setMode(nextMode) {
     mode = nextMode === "thumbnail" ? "thumbnail" : "video";
 
     document.querySelectorAll(".tab").forEach((tab) => {
       const selected = tab.dataset.mode === mode;
 
-      tab.setAttribute("aria-selected", String(selected));
       tab.classList.toggle("active", selected);
+      tab.setAttribute("aria-selected", String(selected));
     });
 
-    if (go) {
-      go.textContent =
-        mode === "video" ? "Get download links" : "Get thumbnails";
-    }
+    go.textContent =
+      mode === "video" ? "Get download links" : "Get thumbnails";
 
-    if (result) {
-      result.hidden = true;
-      result.replaceChildren();
-    }
-
+    clearResults();
     setStatus("");
   }
 
@@ -103,27 +121,25 @@
     });
   });
 
-  const queryParams = new URLSearchParams(window.location.search);
+  const queryParams = new URLSearchParams(location.search);
 
   if (queryParams.get("tab") === "thumbnail") {
     setMode("thumbnail");
   }
 
-  // -----------------------------
-  // API Error Handling
-  // -----------------------------
+  // API response handling
   async function readResponse(response) {
     const contentType = response.headers.get("content-type") || "";
 
-    if (!contentType.includes("application/json")) {
+    if (!contentType.toLowerCase().includes("application/json")) {
       if (!response.ok) {
         throw new Error(
-          `Server returned HTTP ${response.status}. Please try again later.`
+          `The server returned HTTP ${response.status}. Please try again.`
         );
       }
 
       throw new Error(
-        "The server returned an unexpected response. Please try again later."
+        "The API returned an unexpected response. Please try again."
       );
     }
 
@@ -132,13 +148,18 @@
     try {
       data = await response.json();
     } catch {
-      throw new Error("The server returned an invalid response.");
+      throw new Error("The API returned invalid JSON.");
     }
 
     if (!response.ok) {
       throw new Error(
-        data?.error || `Request failed with HTTP ${response.status}.`
+        data?.error ||
+        `The request failed with HTTP ${response.status}.`
       );
+    }
+
+    if (!data || typeof data !== "object" || Array.isArray(data)) {
+      throw new Error("The API returned an invalid response.");
     }
 
     return data;
@@ -147,9 +168,17 @@
   function showRequestError(error) {
     console.error("ClipHarbor API request failed:", error);
 
+    if (error.name === "AbortError") {
+      setStatus(
+        "The request timed out. The server may be starting up. Please try again.",
+        true
+      );
+      return;
+    }
+
     if (error instanceof TypeError) {
       setStatus(
-        "Unable to connect to the API. Check your connection, CORS settings, and backend status.",
+        "Could not connect to the API. Check the backend URL, CORS settings, and network connection.",
         true
       );
       return;
@@ -161,34 +190,91 @@
     );
   }
 
-  // -----------------------------
-  // Render Results
-  // -----------------------------
-  function render(data) {
+  // Result rendering
+  function render(data, requestedMode, videoUrl) {
     const apiBase = getApiBase();
-    const videoUrl = input.value.trim();
-    const encodedUrl = encodeQuery(videoUrl);
 
     const items =
-      mode === "video"
-        ? (Array.isArray(data.qualities) ? data.qualities : [])
-        : (Array.isArray(data.thumbnails) ? data.thumbnails : []);
+      requestedMode === "video"
+        ? data.qualities
+        : data.thumbnails;
 
-    if (items.length === 0) {
+    if (!Array.isArray(items) || items.length === 0) {
       throw new Error(
-        mode === "video"
+        requestedMode === "video"
           ? "No download options are available for this video."
           : "No thumbnail options are available for this video."
       );
     }
 
-    const links = items.map((item) => {
-      const label = escapeHTML(item.label || "Download");
-      let href;
-      let isDownload = false;
-      let className = "btn ghost";
+    const container = document.createDocumentFragment();
 
-      if (mode === "video") {
+    const meta = makeElement("div", "meta");
+    const thumbnailUrl =
+      typeof data.thumbnail === "string" ? data.thumbnail : "";
+
+    // Only display HTTPS thumbnail images.
+    if (thumbnailUrl) {
+      try {
+        const parsedThumbnail = new URL(thumbnailUrl);
+
+        if (parsedThumbnail.protocol === "https:") {
+          const image = makeElement("img");
+          image.src = parsedThumbnail.href;
+          image.alt =
+            typeof data.title === "string"
+              ? data.title
+              : "Video thumbnail";
+          image.loading = "lazy";
+          image.referrerPolicy = "no-referrer";
+          meta.appendChild(image);
+        }
+      } catch {
+        // Ignore an invalid thumbnail URL.
+      }
+    }
+
+    const details = makeElement("div");
+    details.appendChild(
+      makeElement(
+        "h3",
+        "",
+        typeof data.title === "string" && data.title.trim()
+          ? data.title
+          : "Untitled video"
+      )
+    );
+
+    const channel =
+      typeof data.channel === "string" ? data.channel : "";
+    const duration = formatTime(data.duration);
+
+    details.appendChild(
+      makeElement(
+        "small",
+        "",
+        [channel, duration].filter(Boolean).join(" · ")
+      )
+    );
+
+    meta.appendChild(details);
+    container.appendChild(meta);
+
+    const grid = makeElement("div", "grid");
+
+    items.forEach((item) => {
+      if (!item || typeof item !== "object") return;
+
+      const label =
+        typeof item.label === "string" && item.label.trim()
+          ? item.label
+          : "Download";
+
+      let href;
+      let className = "btn ghost";
+      let isDownload = false;
+
+      if (requestedMode === "video") {
         const type = item.type === "audio" ? "audio" : "video";
         const height = Number(item.height);
 
@@ -197,7 +283,8 @@
           height < 144 ||
           height > 4320
         ) {
-          throw new Error("The server returned an invalid video quality.");
+          console.warn("Skipping invalid video quality:", item);
+          return;
         }
 
         const params = new URLSearchParams({
@@ -213,7 +300,8 @@
         const size = String(item.key || "");
 
         if (!/^[a-zA-Z0-9_-]+$/.test(size)) {
-          throw new Error("The server returned an invalid thumbnail option.");
+          console.warn("Skipping invalid thumbnail option:", item);
+          return;
         }
 
         const params = new URLSearchParams({
@@ -224,100 +312,124 @@
         href = `${apiBase}/api/thumbnail?${params.toString()}`;
       }
 
-      return `
-        <a
-          class="${className}"
-          href="${escapeHTML(href)}"
-          ${isDownload ? 'data-dl="true"' : ""}
-        >${label}</a>
-      `;
+      const link = makeElement("a", className, label);
+      link.href = href;
+
+      if (isDownload) {
+        link.addEventListener("click", () => {
+          setStatus(
+            "Preparing your file. This may take some time; keep this tab open."
+          );
+        });
+      } else {
+        link.setAttribute("download", "");
+      }
+
+      grid.appendChild(link);
     });
 
-    const title = escapeHTML(data.title || "Untitled video");
-    const channel = escapeHTML(data.channel || "");
-    const thumbnail = escapeHTML(data.thumbnail || "");
-    const duration = formatTime(data.duration);
+    if (!grid.children.length) {
+      throw new Error("No valid options were returned by the API.");
+    }
 
-    result.innerHTML = `
-      <div class="meta">
-        ${
-          thumbnail
-            ? `<img src="${thumbnail}" alt="${title}" loading="lazy">`
-            : ""
-        }
-        <div>
-          <h3>${title}</h3>
-          <small>${channel}${channel && duration ? " · " : ""}${duration}</small>
-        </div>
-      </div>
-      <div class="grid">
-        ${links.join("")}
-      </div>
-    `;
-
+    container.appendChild(grid);
+    result.replaceChildren(container);
     result.hidden = false;
-
-    result.querySelectorAll("[data-dl]").forEach((link) => {
-      link.addEventListener("click", () => {
-        setStatus(
-          "Preparing your file. The download may take some time; keep this tab open."
-        );
-      });
-    });
   }
 
-  // -----------------------------
-  // Submit Form
-  // -----------------------------
+  // Form submission
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    const videoUrl = input?.value.trim();
+    const videoUrl = input.value.trim();
 
     if (!videoUrl) {
       setStatus("Paste a YouTube link first.", true);
-      input?.focus();
+      input.focus();
       return;
     }
 
-    if (!/^https?:\/\//i.test(videoUrl)) {
-      setStatus("Please enter a valid YouTube URL.", true);
-      input?.focus();
+    let parsedUrl;
+
+    try {
+      parsedUrl = new URL(videoUrl);
+    } catch {
+      setStatus("Enter a valid YouTube video URL.", true);
+      input.focus();
       return;
     }
+
+    if (
+      !["http:", "https:"].includes(parsedUrl.protocol) ||
+      !["youtube.com", "www.youtube.com", "m.youtube.com",
+        "youtu.be", "www.youtu.be", "music.youtube.com",
+        "youtube-nocookie.com", "www.youtube-nocookie.com"
+      ].includes(parsedUrl.hostname.toLowerCase())
+    ) {
+      setStatus("Please enter a supported YouTube URL.", true);
+      input.focus();
+      return;
+    }
+
+    // Cancel a previous request if one is still active.
+    if (activeController) {
+      activeController.abort();
+    }
+
+    const controller = new AbortController();
+    activeController = controller;
+
+    const requestedMode = mode;
 
     setLoading(true);
-    result.hidden = true;
-    result.replaceChildren();
+    clearResults();
+    setStatus("Connecting to ClipHarbor...");
 
-    setStatus("Looking up your video...");
+    // Render free services may need time to wake up.
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 90000);
 
     try {
       const apiBase = getApiBase();
 
+      setStatus("Looking up your video...");
+
       const response = await fetch(`${apiBase}/api/info`, {
         method: "POST",
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          "Accept": "application/json"
         },
-        body: JSON.stringify({
-          url: videoUrl
-        })
+        body: JSON.stringify({ url: videoUrl }),
+        signal: controller.signal,
+        mode: "cors",
+        credentials: "omit"
       });
 
       const data = await readResponse(response);
 
+      // Ignore a response if the user has switched tabs meanwhile.
+      if (requestedMode !== mode) return;
+
+      render(data, requestedMode, videoUrl);
+
       setStatus(
-        mode === "video"
-          ? "Pick a download option below."
+        requestedMode === "video"
+          ? "Choose a download option below."
           : "Choose a thumbnail size below."
       );
-
-      render(data);
     } catch (error) {
-      showRequestError(error);
+      if (requestedMode === mode) {
+        showRequestError(error);
+      }
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+
+      if (activeController === controller) {
+        activeController = null;
+        setLoading(false);
+      }
     }
   });
 })();
